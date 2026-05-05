@@ -1,0 +1,444 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// =========================
+// 1. Users & Auth
+// =========================
+model User {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  hashedPassword String
+  fullName       String?
+  role           String    @default("user") // "user" | "admin"
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  profile         UserProfile?
+  subscription    Subscription?
+  payments        PaymentTransaction[]
+  scanUsage       ScanUsage[]
+  diagnoses       DiagnosisRecord[]
+  followUps       FollowUp[]
+  routines        Routine[]
+  reminders       Reminder[]
+  notifications   Notification[]
+  chatSessions    ChatSession[]
+  posts           CommunityPost[]
+  comments        CommunityComment[]
+  upvotes         PostUpvote[]
+  commentUpvotes  CommentUpvote[]
+  sharedProgress  SharedProgress[]
+  groupMemberships GroupMembership[]
+  achievements    UserAchievement[]
+  consults        DermatologistConsult[]
+  feedback        DiagnosisFeedback[]
+  healthScore     SkinHealthScore?
+  conditionJourneys ConditionJourney[]
+  images          Image[]
+}
+
+model Image {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  url          String
+  thumbnailUrl String?
+  bytes        Int      @default(0)
+  width        Int      @default(0)
+  height       Int      @default(0)
+  createdAt    DateTime @default(now())
+}
+
+model UserProfile {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  age       Int?
+  gender    String?
+  skinType  String?  // oily | dry | combination | normal | sensitive
+  concerns  String?  // JSON-encoded string array
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// =========================
+// 2. Subscriptions & Payments
+// =========================
+model Subscription {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId    String   // free | premium_monthly | premium_quarterly | premium_yearly
+  status    String   @default("active") // active | canceled | expired | past_due
+  startDate DateTime @default(now())
+  endDate   DateTime
+  autoRenew Boolean  @default(true)
+  currency  String   @default("INR")
+  amount    Int      @default(0) // in major units (₹), not paise
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model PaymentTransaction {
+  id                String   @id @default(cuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider          String   // razorpay | stripe | mock
+  providerOrderId   String?  // Razorpay order_id
+  providerPaymentId String?  // Razorpay payment_id
+  planId            String
+  amount            Int      // in paise for Razorpay (₹299 = 29900)
+  currency          String   @default("INR")
+  status            String   // success | failed | pending
+  createdAt         DateTime @default(now())
+}
+
+model ScanUsage {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  month       String   // "2026-05"
+  scansCount  Int      @default(0)
+  chatCount   Int      @default(0) // daily-bucket chat usage uses ChatUsage; this counts month scans
+  @@unique([userId, month])
+}
+
+model ChatUsage {
+  id        String @id @default(cuid())
+  userId    String
+  day       String // "2026-05-05"
+  count     Int    @default(0)
+  @@unique([userId, day])
+}
+
+// =========================
+// 3. Diagnosis & Conditions
+// =========================
+model DiagnosisRecord {
+  id                  String   @id @default(cuid())
+  userId              String
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  imageUrl            String?
+  bodyPart            String
+  durationDays        Int
+  symptoms            String   // JSON array
+  extraNotes          String?
+  predictedCondition  String
+  confidence          Float
+  description         String
+  possibleEffects     String   // JSON array
+  prevention          String   // JSON array
+  solutions           String   // JSON array
+  disclaimer          String
+  safetyFlag          Boolean  @default(false)
+  createdAt           DateTime @default(now())
+
+  followUps  FollowUp[]
+  feedback   DiagnosisFeedback[]
+  consults   DermatologistConsult[]
+  beforeProgress SharedProgress[] @relation("BeforeScan")
+  afterProgress  SharedProgress[] @relation("AfterScan")
+}
+
+model Condition {
+  id                String   @id @default(cuid())
+  name              String   @unique
+  shortDescription  String
+  longDescription   String
+  tags              String   // JSON array
+  typicalSymptoms   String   // JSON array
+  typicalLocations  String   // JSON array
+  chronic           Boolean  @default(false)
+  causes            String   // JSON array
+  riskFactors       String   // JSON array
+  whenToSeeDoctor   String   // JSON array
+  prevention        String   // JSON array
+  treatmentsGeneral String   // JSON array
+  effects           String   // JSON array
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model Article {
+  id          String   @id @default(cuid())
+  title       String
+  slug        String   @unique
+  contentHtml String
+  excerpt     String
+  tags        String   // JSON array
+  isPremium   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// =========================
+// 4. Routines
+// =========================
+model Routine {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String   // morning | night
+  steps     String   // JSON array of {step_number, step_type, description}
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// =========================
+// 5. Follow-ups & Journey
+// =========================
+model FollowUp {
+  id                  String   @id @default(cuid())
+  userId              String
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  originalDiagnosisId String
+  originalDiagnosis   DiagnosisRecord @relation(fields: [originalDiagnosisId], references: [id], onDelete: Cascade)
+  scheduledDate       DateTime
+  completedDate       DateTime?
+  status              String   @default("pending") // pending | completed | skipped
+  followUpScanId      String?
+  selfRating          Int?     // 1-5
+  notes               String?
+  createdAt           DateTime @default(now())
+}
+
+model ConditionJourney {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conditionName   String
+  firstDetected   DateTime
+  lastScanned     DateTime
+  scanIds         String   // JSON array
+  followUpIds     String   // JSON array
+  trend           String   @default("stable") // improving | worsening | stable | resolved
+  @@unique([userId, conditionName])
+}
+
+model DiagnosisFeedback {
+  id              String   @id @default(cuid())
+  diagnosisId     String
+  diagnosis       DiagnosisRecord @relation(fields: [diagnosisId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wasAccurate     Boolean
+  actualCondition String?
+  doctorConfirmed Boolean  @default(false)
+  notes           String?
+  createdAt       DateTime @default(now())
+}
+
+// =========================
+// 6. Notifications & Reminders
+// =========================
+model Reminder {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type         String   // scan_check | routine_step
+  message      String
+  scheduleType String   // once | daily | weekly
+  nextRunAt    DateTime
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  body      String
+  type      String   // alert | info | promo
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+// =========================
+// 7. Community
+// =========================
+model CommunityPost {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  body        String
+  images      String?  // JSON array
+  tags        String   // JSON array
+  isAnonymous Boolean  @default(false)
+  upvotes     Int      @default(0)
+  views       Int      @default(0)
+  status      String   @default("active") // active | flagged | removed
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  comments    CommunityComment[]
+  postUpvotes PostUpvote[]
+}
+
+model CommunityComment {
+  id              String   @id @default(cuid())
+  postId          String
+  post            CommunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  body            String
+  isAnonymous     Boolean  @default(false)
+  upvotes         Int      @default(0)
+  parentCommentId String?
+  status          String   @default("active")
+  createdAt       DateTime @default(now())
+
+  commentUpvotes  CommentUpvote[]
+}
+
+model PostUpvote {
+  id     String @id @default(cuid())
+  postId String
+  post   CommunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([postId, userId])
+}
+
+model CommentUpvote {
+  id        String @id @default(cuid())
+  commentId String
+  comment   CommunityComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([commentId, userId])
+}
+
+model SharedProgress {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title         String
+  beforeScanId  String
+  beforeScan    DiagnosisRecord @relation("BeforeScan", fields: [beforeScanId], references: [id], onDelete: Cascade)
+  afterScanId   String
+  afterScan     DiagnosisRecord @relation("AfterScan", fields: [afterScanId], references: [id], onDelete: Cascade)
+  story         String
+  isPublic      Boolean  @default(true)
+  shareToken    String   @unique
+  likes         Int      @default(0)
+  createdAt     DateTime @default(now())
+}
+
+model SkinGroup {
+  id             String   @id @default(cuid())
+  name           String   @unique
+  skinType       String
+  conditionTags  String   // JSON array
+  description    String
+  memberCount    Int      @default(0)
+  members        GroupMembership[]
+}
+
+model GroupMembership {
+  id       String   @id @default(cuid())
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  groupId  String
+  group    SkinGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  joinedAt DateTime @default(now())
+  @@unique([userId, groupId])
+}
+
+// =========================
+// 8. Dermatologist Integration
+// =========================
+model Dermatologist {
+  id                String   @id @default(cuid())
+  name              String
+  credentials       String
+  specialization    String
+  responseTimeHours Int      @default(24)
+  isAvailable       Boolean  @default(true)
+  consults          DermatologistConsult[]
+}
+
+model DermatologistConsult {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  diagnosisId     String
+  diagnosis       DiagnosisRecord @relation(fields: [diagnosisId], references: [id], onDelete: Cascade)
+  question        String
+  status          String   @default("pending") // pending | answered | closed
+  response        String?
+  dermatologistId String
+  dermatologist   Dermatologist @relation(fields: [dermatologistId], references: [id])
+  respondedAt     DateTime?
+  createdAt       DateTime @default(now())
+}
+
+// =========================
+// 9. Gamification
+// =========================
+model SkinHealthScore {
+  id                  String   @id @default(cuid())
+  userId              String   @unique
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  score               Int      @default(0)
+  scanConsistency     Int      @default(0)
+  followupCompletion  Int      @default(0)
+  routineAdherence    Int      @default(0)
+  communityEngagement Int      @default(0)
+  lastUpdated         DateTime @default(now())
+}
+
+model Badge {
+  id            String   @id @default(cuid())
+  name          String   @unique
+  description   String
+  icon          String
+  conditionType String  // streak | scan_count | community | followup
+  threshold     Int
+  achievements  UserAchievement[]
+}
+
+model UserAchievement {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badgeId   String
+  badge     Badge    @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+  earnedAt  DateTime @default(now())
+  @@unique([userId, badgeId])
+}
+
+// =========================
+// 10. Chatbot
+// =========================
+model ChatSession {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  status    String   @default("active") // active | archived
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messages  ChatMessage[]
+}
+
+model ChatMessage {
+  id                  String   @id @default(cuid())
+  sessionId           String
+  session             ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  role                String   // user | assistant
+  content             String
+  relatedCondition    String?
+  relatedDiagnosisId  String?
+  safetyFlag          Boolean  @default(false)
+  createdAt           DateTime @default(now())
+}
