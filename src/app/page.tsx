@@ -4,6 +4,9 @@ import { getCurrentUser } from "@/lib/auth";
 import { Sparkles, Camera, Users, MessageCircle, ShieldCheck } from "lucide-react";
 import { LogoMark } from "@/components/Logo";
 
+// Renders per request — checks auth cookie
+export const dynamic = "force-dynamic";
+
 export default async function LandingPage() {
   const user = await getCurrentUser();
   if (user) redirect("/dashboard");
